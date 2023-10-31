@@ -1,7 +1,8 @@
 
-#include "antbms.h"
-#include <bluetooth.h>
 #include "Arduino.h"
+
+#include "antbms.h"
+#include "bluetooth.h"
 
 const uint8_t REQUEST_DATA[] = {0xDB, 0xDB, 0x00, 0x00, 0x00, 0x00};
 
@@ -16,9 +17,13 @@ int32_t buffer_get_int32(const uint8_t buffer[], uint8_t index) {
 
 AntBMS bms;
 
-bool AntBMS::processPacket(uint8_t buffer[], int size) {
-	if (!isChecksumValid(buffer, size))
+bool AntBMS::processPacket() 
+{
+	if (!isChecksumValid())
+	{
+		Serial.println("ANT-BMS wrong checksum.");
 		return false;
+	}
 
 	// Read stuff
 	values.totalVoltage = (double) buffer_get_int16(buffer, 4) * 0.1;
@@ -60,6 +65,9 @@ bool AntBMS::processPacket(uint8_t buffer[], int size) {
 		values.temperatures[probe] = buffer_get_int16(buffer, i);
 		probe++;
 	}
+
+	lastDataMillis = millis();
+
 	return true;
 }
 
@@ -73,72 +81,52 @@ void AntBMS::printSerial()
 	Serial.print("chargeFlag:"); Serial.println(values.chargeFlag);
 	Serial.print("dischargeFlag:"); Serial.println(values.dischargeFlag);
 
-	for (int probe = 0; probe < 6; probe++) {
+	for (int probe = 0; probe < 6; ++probe) 
 		Serial.printf("Probe %d: %d", probe, values.temperatures[probe]);
-	}
+	Serial.println("\n");
 
-	for (int cell = 0; cell < BATTERY_CELL_COUNT; cell++) {
-		Serial.print("Cell "); Serial.print(cell + 1); Serial.print(" : "); Serial.println(values.voltages[cell], 3);
+	for (int cell = 0; cell < values.numberOfBatteries; ++cell) 
+	{
+		Serial.printf("Cell % 2d: % 2.3f", cell, values.voltages[cell]);
+		Serial.println();
 	}
 	Serial.print("\n\n");
 }
 
-void writeBlockBT(const uint8_t buf[], int size)
-{
-  for (int i=0; i<size; ++i)
-    bluetooth::SerialBT.write(buf[i]);
-  bluetooth::SerialBT.flush();
-}
-
-int readBlockBT(uint8_t buffer[], int max_size)
-{
-  int size = 0;
-  while (bluetooth::SerialBT.available()) 
-  {
-    buffer[size] = bluetooth::SerialBT.read();
-	++size;
-	if (size > max_size)
-		return false;
-    delay(1);
-  }
-  return size;
-}
-
-int AntBMS::requestData(uint8_t buffer[], int size)
+int AntBMS::requestData()
 {
 	if (!bluetooth::connected)
 		return -1;
+
+	if (dataAge() < 1000)
+		return sizeof(buffer);
 		
 	while (bluetooth::SerialBT.available())
 		bluetooth::SerialBT.read();
 
-	writeBlockBT(REQUEST_DATA, 6);
+	bluetooth::writeBlockBT(REQUEST_DATA, sizeof(REQUEST_DATA));
 	bluetooth::SerialBT.flush();
 	while (!bluetooth::SerialBT.available())
 		empty_statement;
 
-  	int bytesRead = readBlockBT(buffer, size);
-  	Serial.printf("Received %d bytes.\n", bytesRead);
-
-	/*  if (i == 140) 
-		Serial.printf("0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x\n", buffer[0], buffer[1],buffer[2],buffer[3],buffer[4], buffer[5]);
-	Serial.printf("SOC %d\n", buffer[74]);*/
-
+  	int bytesRead = bluetooth::readBlockBT(buffer, sizeof(buffer));
 	return bytesRead;
 }
 
-bool AntBMS::isChecksumValid(uint8_t buffer[], int size)
+bool AntBMS::isChecksumValid()
 {
-	if (buffer_get_int32(buffer, 0) != 0xAA55AAFF || size != 140)
-		return -1;
+	if (buffer_get_int32(buffer, 0) != 0xAA55AAFF)
+		return false;
 
 	uint16_t expected = 0;
-	for (int i=3; i<137; ++i) 
+	for (int i=4; i<138; ++i) 
 		expected += buffer[i];
 
-	uint16_t checksum = buffer_get_int16(buffer, 137);
+	uint16_t checksum = buffer_get_int16(buffer, 138);
 
-	return checksum == expected;
+	Serial.printf("checksum: %d, exp: %d", checksum, expected);
+
+	return (checksum == expected);
 }
 
 tristate AntBMS::toggleAutoBalance()
@@ -147,11 +135,11 @@ tristate AntBMS::toggleAutoBalance()
 
 	while (bluetooth::SerialBT.available())
 		bluetooth::SerialBT.read();
-	writeBlockBT(data, 6);
+	bluetooth::writeBlockBT(data, sizeof(data));
 	while (!bluetooth::SerialBT.available())
 		empty_statement;
 
-  	int bytesRead = readBlockBT(data, 6);
+  	int bytesRead = bluetooth::readBlockBT(data, sizeof(data));
 	if (bytesRead != 6)
 		return 0;
 	else if (data[3] != 0 || data[4] != 0)
@@ -166,11 +154,11 @@ tristate AntBMS::readAutoBalance()
 
 	while (bluetooth::SerialBT.available())
 		bluetooth::SerialBT.read();
-	writeBlockBT(data, 6);
+	bluetooth::writeBlockBT(data, sizeof(data));
 	while (!bluetooth::SerialBT.available())
 		empty_statement;
 
-  	int bytesRead = readBlockBT(data, 6);
+  	int bytesRead = bluetooth::readBlockBT(data, sizeof(data));
 	if (bytesRead != 6)
 		return 0;
 	else if (data[3] != 0 || data[4] != 0)
@@ -213,9 +201,30 @@ void AntBMS::reboot()
 
 	while (bluetooth::SerialBT.available())
 		bluetooth::SerialBT.read();
-	writeBlockBT(data, 6);
+	bluetooth::writeBlockBT(data, sizeof(data));
 	while (!bluetooth::SerialBT.available())
 		empty_statement;
 
-  	int bytesRead = readBlockBT(data, 6);
+  	bluetooth::readBlockBT(data, sizeof(data));
 }
+
+ // reading ANT-BMS data and process them
+ bool AntBMS::requestAndProcess()
+ {
+	if (dataAge() < 1000)
+		return true;
+    int bytesRead = bms.requestData();
+	Serial.printf("Bytes read: %d\n", bytesRead);
+    if (bytesRead > 0 )
+    {
+        if (bms.processPacket()) 
+		{
+        	bms.printSerial();
+			return true;
+		}
+		else
+			Serial.println("Error processing BT-Packet.");
+    }
+	return false;
+}
+

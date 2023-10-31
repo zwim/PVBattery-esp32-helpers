@@ -1,206 +1,50 @@
 
 #define empty_statement ;
 
-#define FORMAT_LITTLEFS_IF_FAILED true
-// You only need to format the filesystem once
-// #define FORMAT_FILESYSTEM       true
-#define FORMAT_FILESYSTEM false
-
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include <WiFiManager.h> 
-#include <ESPAsyncWebServer.h> 
 #include <AsyncTCP.h>
-#include "FS.h"
-#include <LittleFS.h>
-#include "secrets.h"
-#include "sunrise.h"
+#include <ESPAsyncWebServer.h> 
+
 #include "antbms.h"
-
-WiFiServer WifiServer(23);
-WiFiClient WifiServerClient; // for OTA
-AsyncWebServer Server(80);
-
-#ifdef test_debug
-const char ESP_Hostname[] = "Battery_Control_ESP32_TEST"; // Battery_Control_ESP32
-#else
-const char ESP_Hostname[] = "Battery_Control_ESP32"; // Battery_Control_ESP32
-#endif
-
-extern uint8_t buffer[];
+#include "config.h"
+#include "secrets.h"
+#include "soyosource.h"
+#include "timeclient.h"
+#include "util.h"
 
 namespace webServer
 {
-    int g_CurrentChannel;
-    int ActualPower = 0; // for current Power out of current clamp
-    float ActualVoltage = 0;
-    float ActualCurrent = 0;
-    int ActualSetPower = 0;
-    int ActualSetPowerInv = 0;
-    int ActualSetPowerCharger = 0;
-    float ActualSetVoltage = 56.2;
-    float ActualSetCurrent = 0;
-    int PowerReserveCharger = 15;
-    int PowerReserveInv = 15;
-    int MaxPowerCharger = 2000;
-    int MaxPowerInv = 100;
-    int DynPowerInv = 800;
-    bool g_EnableCharge = true;
-    float solar_prognosis;
-    int target_SOC;              // [%]
-    float BatteryCapacity = 4.6; // [kWh]
+    WiFiServer WifiServer(23);
+    WiFiClient WifiServerClient; // for OTA
+    AsyncWebServer Server(80);
 
-    char date_today[9];    // = "yyyymmdd";
-    char date_tomorrow[9]; // = "yyyymmdd";
-    int date_dayofweek_today = 8;
-
-    unsigned long g_Time500 = 0;
-    unsigned long g_Time1000 = 0;
-    unsigned long g_Time5000 = 0;
-    unsigned long g_Time30Min = 0;
-
-    char temp_char[20]; // for temporary storage of strings values
-
-    // Time information
-    TimeStruct myTime; // create a TimeStruct instance to hold the returned data
-    float time_now;
-    bool is_day; // true: is day, false: is night
-
-    // BMS values as structure
-
-    // byte receivedBytes_main[320];
-
-    // flag for saving data inside WifiManager
-    bool shouldSaveConfig = true;
+    void initWebserverFunctions();
 
     // callback notifying us of the need to save config
     void saveConfigCallback()
     {
         Serial.println("Should save config");
-        shouldSaveConfig = true;
-    }
-
-    // save configuration parameter like mqtt server, max inverter power
-    void saveconfigfile()
-    {
-        // save the custom parameters to FS
-        if (shouldSaveConfig)
-        {
-            Serial.println("saving config");
-#if defined(ARDUINOJSON_VERSION_MAJOR) && ARDUINOJSON_VERSION_MAJOR >= 6
-            DynamicJsonDocument json(1024);
-#else
-            DynamicJsonBuffer jsonBuffer;
-            JsonObject &json = jsonBuffer.createObject();
-#endif
-            json["cur_ip"] = current_clamp_ip;
-            json["cur_cmd"] = current_clamp_cmd;
-            json["sensor_resp"] = sensor_resp;
-            json["sensor_resp_power"] = sensor_resp_power;
-//            json["wm_resetsetting"] = wm_resetsetting;
-            json["PowerReserveCharger"] = PowerReserveCharger;
-            json["PowerReserveInv"] = PowerReserveInv;
-            json["MaxPowerCharger"] = MaxPowerCharger;
-            json["MaxPowerInv"] = MaxPowerInv;
-//            json["g_enableDynamicload"] = g_enableDynamicload;
-
-            File configFile = LittleFS.open("/config.json", "w");
-            if (!configFile)
-            {
-                Serial.println("failed to open config file for writing");
-            }
-            else
-            {
-    #if defined(ARDUINOJSON_VERSION_MAJOR) && ARDUINOJSON_VERSION_MAJOR >= 6
-                serializeJson(json, Serial);
-                serializeJson(json, configFile);
-    #else
-                json.printTo(Serial);
-                json.printTo(configFile);
-    #endif
-                configFile.close();        
-            }
-        }
+        config::shouldSaveConfig = true;
     }
 
     void init()
     {
-        // read configuration from FS json
-        Serial.println("mounting FS...");
-
-        if (LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED))
-        {
-            Serial.println("mounted file system");
-            if (LittleFS.exists("/config.json"))
-            {
-                // file exists, reading and loading
-                Serial.println("reading config file");
-                File configFile = LittleFS.open("/config.json", "r");
-                if (configFile)
-                {
-                    Serial.println("opened config file");
-                    size_t size = configFile.size();
-                    // Allocate a buffer to store contents of the file.
-                    std::unique_ptr<char[]> buf(new char[size]);
-
-                    configFile.readBytes(buf.get(), size);
-
-#if defined(ARDUINOJSON_VERSION_MAJOR) && ARDUINOJSON_VERSION_MAJOR >= 6
-                    DynamicJsonDocument json(1024);
-                    auto deserializeError = deserializeJson(json, buf.get());
-                    serializeJson(json, Serial);
-                    if (!deserializeError)
-                    {
-#else
-                    DynamicJsonBuffer jsonBuffer;
-                    JsonObject &json = jsonBuffer.parseObject(buf.get());
-                    json.printTo(Serial);
-                    if (json.success())
-                    {
-#endif
-                        Serial.println("\nparsed json");
-                        strcpy(current_clamp_ip, json["cur_ip"]);
-                        strcpy(current_clamp_cmd, json["cur_cmd"]);
-                        strcpy(sensor_resp, json["sensor_resp"]);
-                        strcpy(sensor_resp_power, json["sensor_resp_power"]);
-                        PowerReserveCharger = json["PowerReserveCharger"];
-                        PowerReserveInv = json["PowerReserveInv"];
-                        MaxPowerCharger = json["MaxPowerCharger"];
-                        MaxPowerInv = json["MaxPowerInv"];
-//                        wm_resetsetting = json["wm_resetsetting"];
-//                        g_enableDynamicload = json["g_enableDynamicload"];
-                    }
-                    else
-                    {
-                        Serial.println("failed to load json config");
-                    }
-                    configFile.close();
-                }
-            }
-        }
-        else
-        {
-            Serial.println("failed to mount FS");
-        } // end read
-
         Serial.print("Scan for SSIDs ... ");
         int n = WiFi.scanNetworks();
         Serial.printf("%d network(s) found\n", n);
         for (int i = 0; i < n; i++)
-        {
             Serial.println(WiFi.SSID(i));
-        }
         Serial.println();
 
         // The extra parameters to be configured (can be either global or just in the setup)
         // After connecting, parameter.getValue() will get you the configured value
         // id/name placeholder/prompt default length
-        WiFiManagerParameter custom_current_clamp_ip("cur_ip", "current_clamp_ip", current_clamp_ip, 40);
-        WiFiManagerParameter custom_current_clamp_cmd("cur_cmd", "current_clamp_command", current_clamp_cmd, 40);
-        WiFiManagerParameter custom_sensor_resp("sensor_resp", "sensor_resp", sensor_resp, 20);
-        WiFiManagerParameter custom_sensor_resp_power("sensor_resp_power", "sensor_resp_power", sensor_resp_power, 20);
+        WiFiManagerParameter custom_current_hostname("cur_hostname", "Hostname", config::hostname, sizeof(config::hostname));
+        WiFiManagerParameter custom_current_bt_enabled("cur_bt_enabled", "Bluetooth enabled (ANT)", config::bt_enabled, sizeof(config::bt_enabled));
+        WiFiManagerParameter custom_current_rs485_enabled("cur_rs485_enabled", "RS485 enabled (SOYOSOURCE)", config::rs485_enabled, sizeof(config::rs485_enabled));
 
         // WiFiManager, Local intialization. Once its business is done, there is no need to keep it around
         WiFiManager wm;
@@ -214,10 +58,10 @@ namespace webServer
         wm.setSaveConfigCallback(saveConfigCallback);
 
         // add all your parameters here
-        wm.addParameter(&custom_current_clamp_ip);
-        wm.addParameter(&custom_current_clamp_cmd);
-        wm.addParameter(&custom_sensor_resp);
-        wm.addParameter(&custom_sensor_resp_power);
+        wm.addParameter(&custom_current_hostname);
+        wm.addParameter(&custom_current_bt_enabled);
+        wm.addParameter(&custom_current_rs485_enabled);
+
 
         // reset settings - wipe stored credentials for testing
         // these are stored by the esp library
@@ -250,12 +94,9 @@ namespace webServer
         }
 
         Serial.println("The values in the file are: ");
-        Serial.println("\tcurrent clamp : " + String(current_clamp_ip));
-        Serial.println("\tcommand : " + String(current_clamp_cmd));
-        Serial.println("\tResponse  : " + String(sensor_resp));
-        Serial.println("\tResponse power : " + String(sensor_resp_power));
-
-        saveconfigfile();
+        Serial.println("\tcurrent_hostname: " + String(config::hostname));
+        Serial.println("\tcurrent_bt_enabled: " + String(config::bt_enabled));
+        Serial.println("\tcurrent_rs485_enabled: " + String(config::rs485_enabled));
 
         ArduinoOTA.onStart([]()
         {
@@ -281,27 +122,45 @@ namespace webServer
             else if (error == OTA_END_ERROR) Serial.println("End Failed"); 
         });
 
-        ArduinoOTA.begin();
         Serial.println("\n########### ArduinoOTA.begin()");
+        ArduinoOTA.begin();
 
+        Serial.println("\n########### WifiServer.begin()");
         WifiServer.begin();
 
-        Serial.println("Soyosource inverter RS485 setup done");
+        initWebserverFunctions();
 
-        Serial.println("JK-BMS RS485 setup done");
-
-        // initialize NTP connection
-        setuptimeClient();
-        Serial.println("NTP setup done");
-
-        Serial.println("Init done: ATTENTION MY_MYMYMYMMY");
+        Server.begin();
+    } // end init
 
 
+    void initWebserverFunctions()
+    {
         Server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-            request->send(200, "text/plain", "ROOT-Folder not ready ...");
+            AsyncResponseStream *response = request->beginResponseStream("text/plain", 1024); // todo use BUFFER_SIZE
+
+            response->printf("Hostname: %s\n", config::hostname);
+            response->printf("Target Bluetooth Adress: %s\n", config::bt_mac_address);
+            response->printf("Bluetooth enabled: %s\n", config::bt_enabled[0] == '0' ? "off" : "on");
+            response->printf("RS485 enabled: %s\n", config::rs485_enabled[0] == '0' ? "off" : "on");
+            response->printf("%s\n", timeClient::showLocalTime());
+
+            response->printf("\nBuild: %s %s\n\n", __DATE__, __TIME__);
+
+            response->printf("/balance.off\n");
+
+            response->printf("/show\n");
+            response->printf("/bms.data\n");
+            response->printf("/balance.toggle\n");
+
+            response->printf("/power/watt  watt may be a positive number\n");
+            response->printf("/reboot\n");
+
+            request->send(response);
         });
 
-/*        Server.on("/balance.on", HTTP_GET, [](AsyncWebServerRequest *request){
+/*
+        Server.on("/balance.on", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
             if (bms.setAutoBalance(true))
                 response->printf("on");
@@ -318,7 +177,7 @@ namespace webServer
                 response->printf("on");
             request->send(response);
         });
-        */
+*/
 
         Server.on("/balance.toggle", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
@@ -335,14 +194,22 @@ namespace webServer
 
         Server.on("/bms.data", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("application/octet-stream", 150); // todo use BUFFER_SIZE
-            for (int i=0; i<140; ++i)
-                response->printf("%c", buffer[i]);
+            if (bms.requestAndProcess())
+            {
+                for (int i=0; i<140; ++i)
+                    response->printf("%c", bms.buffer[i]);
+            }
+            else
+            {
+                response->printf("Error %c\n", 0x66);
+            }
             request->send(response);
         });
 
         Server.on("/show", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 1024); // todo use BUFFER_SIZE
-            response->printf("Power: %lu W\n", bms.values.currentPower);
+            bms.requestAndProcess();
+            response->printf("Power: %ld W\n", bms.values.currentPower);
             response->printf("Current: %3.2f A\n", bms.values.current);
             response->printf("SOC: %d %%\n", bms.values.percentage);
             response->printf("totalCapacity: %5.3f Ah\n", bms.values.totalCapacity);
@@ -351,34 +218,98 @@ namespace webServer
             response->printf("dischargeFlag: %x\n", bms.values.dischargeFlag);
 
             for (int probe = 0; probe < 6; probe++) {
-                response->printf("Probe %d: %d °C\n", probe, bms.values.temperatures[probe]);
+                if (bms.values.temperatures[probe] < 200 && bms.values.temperatures[probe] > -20)
+                    response->printf("Probe %d: %d C\n", probe, bms.values.temperatures[probe]);
+                else
+                    response->printf("Probe %d: not connected\n", probe);
             }
 
             for (int cell = 0; cell < bms.values.numberOfBatteries; cell++) {
-                response->printf("Cell %d: %1.3f\n", cell, bms.values.voltages[cell]);
+                response->printf("Cell %d: %1.3f V\n", cell, bms.values.voltages[cell]);
             }
-
             request->send(response);
         });
 
-        Server.begin();
-    } // end init
+        Server.onNotFound([](AsyncWebServerRequest *request){
+            request->send(404, "text/plain", "Path not found. Try /");
+        });
 
-    void looper()
-    {
-        // CAN handling and OTA shifted to core 1
-        if ((millis() - g_Time500) > 500)
+/*
+        // Send a GET request to <IP>/sensor/<number>
+        Server.on("^\\/power\\/([0-9]+)$", HTTP_GET, [] (AsyncWebServerRequest *request) 
         {
-            g_Time500 = millis();
-        }
+            String requestedPower = request->pathArg(0);
+            request->send(200, "text/plain", "Requested Power: " + requestedPower + " W");
+            soyosource::requestPower(requestedPower.toInt());
+        });
+*/ 
+        // Send a GET request to <IP>/set?power=<value>
+        Server.on("/set", HTTP_GET, [] (AsyncWebServerRequest *request) {
+            if (request->hasParam("power")) 
+            {
+                String requestedPower = request->getParam("power")->value();
+                request->send(200, "text/plain", "Requested Power: " + requestedPower + " W");
+                soyosource::requestPower(requestedPower.toInt());
+            }
+            else if (request->hasParam("btmac")) 
+            {
+                String macadr = request->getParam("btmac")->value();
+                request->send(200, "text/plain", "Bluetooth MAC: " + macadr);
+                strcpy(config::bt_mac_address, macadr.c_str());
+                config::saveConfigFile(true);
+                delay(3000);
+                ESP.restart();
+            }
+            else if (request->hasParam("bluetooth"))
+            {
+                String requestedPower = request->getParam("bluetooth")->value();
+                if (requestedPower[0] == '1')
+                {
+                    request->send(200, "text/plain", "enable Bluetooth");
+                    strcpy(config::bt_enabled, "1");
+                    bluetooth::enabled = true;
+                }
+                else if (requestedPower[0] == '0')
+                {
+                    request->send(200, "text/plain", "disable Bluetooth");
+                    strcpy(config::bt_enabled, "0");
+                    bluetooth::enabled = false;
+                }
+                else
+                    return;
 
-        if ((millis() - g_Time1000) > 1000)
-        {
+                config::saveConfigFile(true);
+                delay(3000);
+                ESP.restart();
+            } 
+            else if (request->hasParam("rs485"))
+            {
+                String requestedPower = request->getParam("rs485")->value();
+                if (requestedPower[0] == '1')
+                {
+                    request->send(200, "text/plain", "enable rs485");
+                    strcpy(config::rs485_enabled, "1");
+                    soyosource::enabled = true;
+                }
+                else if (requestedPower[0] == '0')
+                {
+                    request->send(200, "text/plain", "disable rs485");
+                    strcpy(config::rs485_enabled, "0");
+                    soyosource::enabled = false;
+                }
+                else
+                    return;
 
-            // update the value for the inverter every second
-//xx            sendpower2soyo(ActualSetPowerInv, Soyo_RS485_PORT_EN);
-            g_Time1000 = millis();
-        }
-    }
+                config::saveConfigFile(true);
+                delay(3000);
+                ESP.restart();
+            } 
+            else 
+            {
+                request->send(200, "text/plain", "nothing set");
+            }
+        });
+
+    } // end initWebserverFunctions
 
 } // end webServer

@@ -1,7 +1,9 @@
 
 #include <BluetoothSerial.h>
 
-#define MY_NAME "ESP32-BT-Master";
+#include "config.h"
+
+#define MY_NAME "ANT-Connector" __DATE__ " " __TIME__
 
 // Check if Bluetooth is available
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
@@ -15,16 +17,16 @@
 
 namespace bluetooth 
 {
+    bool enabled = true;
+    bool connected = false;
+
     //#define USE_NAME // Comment this to use MAC address instead of a slaveName
     String myName = MY_NAME;
     const char *pin = "1234";
 
-    bool connected = false;
-
     #ifdef USE_NAME
     String slaveName = "BMS-ANT24S-666"; // Change this to reflect the real name of your slave BT device
     #else
-    String MACadd = "AA:BB:CC:D0:06:66"; // This only for printing
     uint8_t address[6]  = {0xAA, 0xBB, 0xCC, 0xD0, 0x06, 0x66}; // Change this to reflect real MAC address of your slave BT device
     #endif
 
@@ -32,6 +34,20 @@ namespace bluetooth
 
     bool init()
     {
+        if (!enabled) 
+            return false;
+
+        if (strlen(config::bt_mac_address) < 17)
+            return false;
+
+
+        for (int i = 0; i < 6; ++i)
+        {
+            char tmp[4];
+            strncpy(tmp, config::bt_mac_address + i*3 , 2);
+            address[i] = strtol(tmp, NULL, 16);
+        }
+    
         bool isPinOk = false;
         isPinOk = SerialBT.setPin(pin, 4);  
         Serial.printf("PIN was set: %s\n", isPinOk ? "OK" : "ERROR");
@@ -58,7 +74,7 @@ namespace bluetooth
             Serial.printf("Connecting to slave BT device named \"%s\"\n", slaveName.c_str());
         #else
             connected = SerialBT.connect(address);
-            Serial.print("Connecting to slave BT device with MAC "); Serial.println(MACadd);
+            Serial.print("Connecting to slave BT device with MAC "); Serial.println(config::bt_mac_address);
         #endif
 
         if (connected) {
@@ -70,5 +86,47 @@ namespace bluetooth
                 connected = true;
         }
         return connected;
+    }
+
+    bool writeBlockBT(const uint8_t buffer[], int size)
+    {
+        Serial.printf("writeBlockBT: %d\n\r", size);
+        if (!enabled)
+            return false;
+    
+        if (!connected)
+        {
+            init();
+            if (!connected)
+                return false;
+        }
+        Serial.printf("writeBlockBT: %d\n\r", size);
+        bluetooth::SerialBT.write(buffer, size);
+        bluetooth::SerialBT.flush();
+        return true;
+    }
+
+    int readBlockBT(uint8_t buffer[], int max_size)
+    {
+        Serial.printf("readBlockBT: %d\n\r", max_size);
+        if (!enabled)
+            return -1;
+        if (!connected)
+        {
+            init();
+            if (!connected)
+                return -1;
+        }
+        Serial.printf("readBlockBT: %d\n\r", max_size);
+        int size = 0;
+        while (bluetooth::SerialBT.available()) 
+        {
+            buffer[size++] = bluetooth::SerialBT.read();
+            if (size > max_size)
+                return -1;
+            delay(1);
+        }
+        Serial.printf("readBlockBT: %d\n\r", size);
+        return size;
     }
 }

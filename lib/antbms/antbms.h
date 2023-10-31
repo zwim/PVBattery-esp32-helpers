@@ -1,18 +1,20 @@
 
 
-
 #ifndef ANTBMS_H
 #define ANTBMS_H
 
 #include <stdint.h>
 #include <Arduino.h>
 
+#include "bluetooth.h"
+
 #define empty_statement ;
 #define BATTERY_CELL_COUNT 32
 
 typedef int tristate;
 
-struct BMSStruct {
+struct BMSStruct 
+{
 	float
 		averageVoltage,
 		capacity,
@@ -36,22 +38,33 @@ struct BMSStruct {
 		highestNumber,
 		lowestNumber,
 		numberOfMonomerStrings;
-	uint16_t
+	int16_t
 		temperatures[6];
 	uint32_t
-		currentPower,
+		currentPower;
+	uint32_t
 		balancingFlags,
 		totalTime;
 };
 
-class AntBMS {
+class AntBMS 
+{
 	private:
-		uint32_t lastData = 0;
+		unsigned long lastDataMillis = 0;
+		int requestData();
+		bool processPacket();
+		bool isChecksumValid();
+
+		unsigned long dataAge() {
+			unsigned long age = millis() - lastDataMillis;
+			Serial.println(age);
+			return age > 0 ? age : ((unsigned long) (-1L)) - age;
+		}
+
 	public:
+		uint8_t buffer[150];  // at leas 150 bytes
 		BMSStruct values;
-		int requestData(uint8_t buffer[], int size);
-		bool processPacket(uint8_t buffer[], int size);
-		bool isChecksumValid(uint8_t buffer[], int size);
+		bool requestAndProcess();
 
 		tristate toggleAutoBalance();
 		tristate readAutoBalance();

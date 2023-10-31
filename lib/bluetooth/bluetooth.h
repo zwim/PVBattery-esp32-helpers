@@ -13,9 +13,13 @@
 
 namespace bluetooth 
 {
+    extern bool enabled;
+    extern bool connected;
+    
     extern String myName;
     extern BluetoothSerial SerialBT;
-    extern bool connected;
-
+    
     bool init();
+    bool writeBlockBT(const uint8_t buf[], int size);
+    int readBlockBT(uint8_t buffer[], int max_size);
 }
