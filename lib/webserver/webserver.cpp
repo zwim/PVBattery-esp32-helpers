@@ -7,6 +7,7 @@
 #include <WiFiManager.h> 
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h> 
+#include <LittleFS.h>
 
 #include "antbms.h"
 #include "config.h"
@@ -28,6 +29,13 @@ namespace webServer
     {
         Serial.println("Should save config");
         config::shouldSaveConfig = true;
+    }
+
+    String processor(const String& var)
+    {
+        if(var == "HELLO_FROM_TEMPLATE")
+            return F("Hello world!");
+        return String();
     }
 
     void init()
@@ -310,6 +318,15 @@ namespace webServer
             }
         });
 
+
+        //Send index.html as text
+        Server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request){
+            const char file[] = "/index.html";
+            AsyncWebServerResponse *response = request->beginResponse(LittleFS, file, "text/html");
+            response->addHeader("Server","ESP Async Web Server");
+            request->send(response);
+        });
+        
     } // end initWebserverFunctions
 
 } // end webServer

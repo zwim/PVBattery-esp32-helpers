@@ -118,6 +118,19 @@ namespace config
                     }
                     configFile.close();
                 }
+                File file_to_test;
+                file_to_test = LittleFS.open("/index.html", "r");
+                if (file_to_test)
+                {
+                    Serial.println("Found index.html");
+                    file_to_test.close();
+                }
+                file_to_test = LittleFS.open("/index_ohne_bt.html", "r");
+                if (file_to_test)
+                {
+                    Serial.println("Found index_ohne_bt.html");
+                    file_to_test.close();
+                }
             }
         }
         else
