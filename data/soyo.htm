@@ -1,0 +1,22 @@
+  <div class="content">
+    <div class="card-grid">
+      <div class="card">
+        <p class="card-title"><span class="headline">AC Output: </span><span class="reading"><span id="static_power">%STATICPOWER%</span></span></p>
+        <hr style="color: #fafafa;">        
+        <table>
+          <tbody>
+            <tr>
+              <td style="text-align: center;"><button type="button" onclick="set_power('/powerdec1');" class="btn">- 1 W</button></td>
+              <td style="text-align: center;" class="card-title">Set AC Output</td>
+              <td style="text-align: center;"><button type="button" onclick="set_power('/powerinc1');" class="btn">+ 1 W</button></td>
+            </tr>
+            <tr>
+              <td style="text-align: center;"><button type="button" onclick="set_power('/powerdec10');" class="btn">- 10 W</button></td>
+              <td style="text-align: center;"><button type="button" onclick="set_power('/set?power=0');" class="btn">0 Ws</button></td>
+              <td style="text-align: center;"><button type="button" onclick="set_power('/powerinc10');" class="btn">+ 10 W</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>

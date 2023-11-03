@@ -43,6 +43,11 @@ namespace soyosource
 
     HardwareSerial RS485_Port(1);
 
+    int getLastPower()
+    {
+        return lastPower;
+    }
+
     // initialize RS485 bus for Soyosource communication
     void init(uint8_t rx_pin, uint8_t tx_pin, uint8_t en_pin) 
     {
@@ -65,7 +70,12 @@ namespace soyosource
         } 
     }
 
-    // Function prepares serial string and sends powerdemand by serial interface  to Soyo
+    void requestPowerInc(int16_t inc,  uint8_t en_pin)
+    {
+        requestPower(lastPower + inc, en_pin);
+    }
+
+    // Function prepares serial string and sends powerdemand by serial interface to Soyo
     // needs as input also the enable pin of the RS485 interface
     void requestPower(int16_t demandpowersend, uint8_t en_pin) 
     {

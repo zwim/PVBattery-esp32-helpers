@@ -23,19 +23,13 @@ namespace webServer
     AsyncWebServer Server(80);
 
     void initWebserverFunctions();
+    bool preprocessResponse(char buf[], int buflen);
 
     // callback notifying us of the need to save config
     void saveConfigCallback()
     {
         Serial.println("Should save config");
         config::shouldSaveConfig = true;
-    }
-
-    String processor(const String& var)
-    {
-        if(var == "HELLO_FROM_TEMPLATE")
-            return F("Hello world!");
-        return String();
     }
 
     void init()
@@ -223,8 +217,11 @@ namespace webServer
             response->printf("totalCapacity: %5.3f Ah\n", bms.values.totalCapacity);
             response->printf("remainingCapacity: %5.3f Ah\n", bms.values.remainingCapacity);
             response->printf("chargeFlag: %x\n", bms.values.chargeFlag);
-            response->printf("dischargeFlag: %x\n", bms.values.dischargeFlag);
+            response->printf("dischargeFlag: %x\n\n", bms.values.dischargeFlag);
 
+            response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.highestNumber, bms.values.highestVoltage);
+            response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.lowestNumber, bms.values.lowestVoltage);
+            response->printf("Cell diff %5.3f\n", bms.values.highestVoltage - bms.values.lowestVoltage);
             for (int probe = 0; probe < 6; probe++) {
                 if (bms.values.temperatures[probe] < 200 && bms.values.temperatures[probe] > -20)
                     response->printf("Probe %d: %d C\n", probe, bms.values.temperatures[probe]);
@@ -242,7 +239,7 @@ namespace webServer
             request->send(404, "text/plain", "Path not found. Try /");
         });
 
-/*
+        /*
         // Send a GET request to <IP>/sensor/<number>
         Server.on("^\\/power\\/([0-9]+)$", HTTP_GET, [] (AsyncWebServerRequest *request) 
         {
@@ -250,7 +247,23 @@ namespace webServer
             request->send(200, "text/plain", "Requested Power: " + requestedPower + " W");
             soyosource::requestPower(requestedPower.toInt());
         });
-*/ 
+        */ 
+
+        Server.on("/powerinc1", HTTP_GET, [](AsyncWebServerRequest *request){
+            soyosource::requestPowerInc(+1);  
+            Serial.println("power+1") ;
+        });
+        Server.on("/powerinc10", HTTP_GET, [](AsyncWebServerRequest *request){
+            soyosource::requestPowerInc(+10);   
+        });
+        Server.on("/powerdec1", HTTP_GET, [](AsyncWebServerRequest *request){
+            soyosource::requestPowerInc(-1);   
+        });
+        Server.on("/powerdec10", HTTP_GET, [](AsyncWebServerRequest *request){
+            soyosource::requestPowerInc(-10);   
+        });
+
+
         // Send a GET request to <IP>/set?power=<value>
         Server.on("/set", HTTP_GET, [] (AsyncWebServerRequest *request) {
             if (request->hasParam("power")) 
@@ -321,12 +334,148 @@ namespace webServer
 
         //Send index.html as text
         Server.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request){
-            const char file[] = "/index.html";
-            AsyncWebServerResponse *response = request->beginResponse(LittleFS, file, "text/html");
+            struct 
+            {
+                const char* name; // filename in 
+                bool enabled; // shall file be processed
+            } files[] = { 
+                {"/index.htm", true}, 
+                {"/top.htm", true},
+                {"/soyo.htm", soyosource::enabled},
+                {"/ant.htm", bluetooth::enabled},
+//                {"/mqtt.htm", true},
+                {"/bottom.htm", true},
+                {"/script.js", true},
+                {0, 0},
+            };
+
+            size_t max_size = 0;
+            for (int i = 0; files[i].name != 0; ++i)
+            {    
+                if (!files[i].enabled) continue;
+
+                File file = LittleFS.open(files[i].name, "r");
+                if (file)
+                {
+                    size_t size = file.size();
+                    if (size > max_size)
+                        max_size = size;
+                }                
+            }
+
+            // Allocate a buffer to store contents of the file.
+            char *buf = new char[max_size];
+
+            AsyncResponseStream *response = request->beginResponseStream("text/html");
             response->addHeader("Server","ESP Async Web Server");
+
+            for (int i = 0; files[i].name != 0; ++i)
+            {    
+                if (!files[i].enabled) continue;
+
+                File file = LittleFS.open(files[i].name, "r");
+                if (file)
+                {
+                    size_t size = file.size();
+                    file.readBytes(buf, size);
+
+                    preprocessResponse(buf, max_size);
+
+                    char format_string[16];
+                    snprintf(format_string, sizeof(format_string),"%%.%ds", (int)size);
+                    response->printf(format_string, buf);
+                    file.close();
+                }
+            }
+            response->print("</body></html>");
+            //send the response last
             request->send(response);
+
+            delete[] buf;
         });
         
     } // end initWebserverFunctions
+
+    bool preprocessResponse(char buf[], int buflen)
+    {
+        char naChars[] = "n.a.";
+        char powerChars[16];
+        snprintf(powerChars, sizeof(powerChars), "%d", soyosource::getLastPower());
+
+        bms.requestAndProcess();
+
+        char num_of_cells[50];
+        snprintf(num_of_cells, sizeof(num_of_cells), "<tr><td>%d</td></tr>", bms.values.numberOfBatteries);
+
+        char cell_val[32][50];
+        for (int i = 0; i<32; ++i)
+        {
+            if (i < bms.values.numberOfBatteries)
+                snprintf(cell_val[i], 50, "<tr><td>[%d] %5.3f V</td></tr>", i, bms.values.voltages[i]);
+            else
+                snprintf(cell_val[i], 50, " ");
+        }
+
+        struct 
+        {
+            const char* pattern;
+            char* replacement;
+        } pr[] = {
+            {"%STATICPOWER%", powerChars},
+            {"%UPTIME%", naChars},
+            {"%<tr><td>NUMBER_OF_CELLS</td></tr>%", num_of_cells},
+            {"%<tr><td>[xx] CELL0 V</td></tr>%", cell_val[0]},
+            {"%<tr><td>[xx] CELL1 V</td></tr>%", cell_val[1]},
+            {"%<tr><td>[xx] CELL2 V</td></tr>%", cell_val[2]},
+            {"%<tr><td>[xx] CELL3 V</td></tr>%", cell_val[3]},
+            {"%<tr><td>[xx] CELL4 V</td></tr>%", cell_val[4]},
+            {"%<tr><td>[xx] CELL5 V</td></tr>%", cell_val[5]},
+            {"%<tr><td>[xx] CELL6 V</td></tr>%", cell_val[6]},
+            {"%<tr><td>[xx] CELL7 V</td></tr>%", cell_val[7]},
+            {"%<tr><td>[xx] CELL8 V</td></tr>%", cell_val[8]},
+            {"%<tr><td>[xx] CELL9 V</td></tr>%", cell_val[9]},
+            {"%<tr><td>[xx] CELL10 V</td></tr>%", cell_val[10]},
+            {"%<tr><td>[xx] CELL11 V</td></tr>%", cell_val[11]},
+            {"%<tr><td>[xx] CELL12 V</td></tr>%", cell_val[12]},
+            {"%<tr><td>[xx] CELL13 V</td></tr>%", cell_val[13]},
+            {"%<tr><td>[xx] CELL14 V</td></tr>%", cell_val[14]},
+            {"%<tr><td>[xx] CELL15 V</td></tr>%", cell_val[15]},
+            {"%<tr><td>[xx] CELL16 V</td></tr>%", cell_val[16]},
+            {"%<tr><td>[xx] CELL17 V</td></tr>%", cell_val[17]},
+            {"%<tr><td>[xx] CELL18 V</td></tr>%", cell_val[18]},
+            {"%<tr><td>[xx] CELL19 V</td></tr>%", cell_val[19]},
+            {"%<tr><td>[xx] CELL20 V</td></tr>%", cell_val[20]},
+            {"%<tr><td>[xx] CELL21 V</td></tr>%", cell_val[21]},
+            {"%<tr><td>[xx] CELL22 V</td></tr>%", cell_val[22]},
+            {"%<tr><td>[xx] CELL23 V</td></tr>%", cell_val[23]},
+            {"%<tr><td>[xx] CELL24 V</td></tr>%", cell_val[24]},
+            {"%<tr><td>[xx] CELL25 V</td></tr>%", cell_val[25]},
+            {"%<tr><td>[xx] CELL26 V</td></tr>%", cell_val[26]},
+            {"%<tr><td>[xx] CELL27 V</td></tr>%", cell_val[27]},
+            {"%<tr><td>[xx] CELL28 V</td></tr>%", cell_val[28]},
+            {"%<tr><td>[xx] CELL29 V</td></tr>%", cell_val[29]},
+            {"%<tr><td>[xx] CELL30 V</td></tr>%", cell_val[30]},
+            {"%<tr><td>[xx] CELL31 V</td></tr>%", cell_val[31]},
+            {0, 0},
+        };
+
+        for (int i = 0; pr[i].pattern; ++i)
+        {
+            char *start;
+            int pattern_len = strlen(pr[i].pattern);
+            int replacement_len = strlen(pr[i].replacement);
+            while (true)
+            {
+                start = strstr(buf, pr[i].pattern);
+                if (!start)
+                    break;
+                for ( int j=0; j < replacement_len; ++j)
+                    start[j] = pr[i].replacement[j];
+                for ( int j = replacement_len; j < pattern_len; ++j)
+                    start[j] = ' ';
+            }
+        }
+        return true;
+    }
 
 } // end webServer

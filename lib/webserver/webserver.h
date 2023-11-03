@@ -1,5 +1,6 @@
-//#ifndef WEBSERVER_H
-//#define WEBSERVER_H
+#ifndef WEBSERVER_h
+#define WEBSERVER_h
+
 
 namespace webServer
 {
@@ -7,7 +8,6 @@ namespace webServer
     void readConfigFile();
     void saveConfigFile();
     void initWebserverFunctions();
-    void looper();
 }
 
-//#endif
+#endif

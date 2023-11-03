@@ -26,7 +26,7 @@ void setup()
 
     Serial.println("Load config ...");
     config::readConfigFile();
-    config::saveConfigFile();
+    config::saveConfigFile(true); 
     Serial.println("Load config done.");
 
     Serial.println("Soyosource init ...");
