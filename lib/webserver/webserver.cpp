@@ -8,6 +8,8 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h> 
 #include <LittleFS.h>
+#include <WiFi.h>
+#include <ESP32Ping.h>
 
 #include "antbms.h"
 #include "config.h"
@@ -15,12 +17,16 @@
 #include "soyosource.h"
 #include "timeclient.h"
 #include "util.h"
+#include "webserver.h"
 
 namespace webServer
 {
     WiFiServer WifiServer(23);
     WiFiClient WifiServerClient; // for OTA
     AsyncWebServer Server(80);
+    IPAddress local_ip;
+    IPAddress gateway_ip;
+    char gateway[20] = "";
 
     void initWebserverFunctions();
     bool preprocessResponse(char buf[], int buflen);
@@ -131,10 +137,14 @@ namespace webServer
         WifiServer.begin();
 
         initWebserverFunctions();
-
         Server.begin();
-    } // end init
 
+        local_ip = WiFi.localIP();
+        Serial.print("IP: "); Serial.println(local_ip);
+        gateway_ip = WiFi.gatewayIP();
+        Serial.print("GATEWAY: "); Serial.println(gateway_ip);
+        snprintf(gateway, sizeof(gateway), "%d.%d.%d.%d", gateway_ip[0], gateway_ip[1], gateway_ip[2], gateway_ip[3]);
+    } // end init
 
     void initWebserverFunctions()
     {
@@ -322,7 +332,7 @@ namespace webServer
                     return;
 
                 config::saveConfigFile(true);
-                delay(3000);
+                delay(3500);
                 ESP.restart();
             } 
             else 
@@ -476,6 +486,18 @@ namespace webServer
             }
         }
         return true;
+    }
+
+    bool checkGateway()
+    {
+        Serial.println(webServer::gateway);
+        bool success = Ping.ping(webServer::gateway, 4);
+        if (success)
+            Serial.println("Network OK");
+        else
+            Serial.println("No network");
+
+        return success;
     }
 
 } // end webServer

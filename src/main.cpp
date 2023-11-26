@@ -20,7 +20,6 @@ void setup()
     Serial.begin(115200);
     for (int i = 20; i>0; i--)
         Serial.print("#");
-    Serial.println(" " __DATE__ __TIME__);
 
     Serial.println("BOOTED!\n\n");
 
@@ -50,10 +49,29 @@ void setup()
     timeClient::printLocalTime();
     Serial.println("NTP init done.");
 
+    if (!webServer::checkGateway())
+    {
+        delay(5000);
+        ESP.restart();
+    }
+
+    Serial.println(" " __DATE__ __TIME__);
 } // end setup()
 
 
+unsigned long _start_time = 0;
 void loop() 
 {
-    delay(100);
+    delay(100);    
+
+    // check every 10s if Network is reachable
+    if (millis()-_start_time > 10000)
+    {
+        if (!webServer::checkGateway()) 
+        {
+            delay(5000);
+            ESP.restart();
+        }
+        _start_time = millis();
+    }
 }
