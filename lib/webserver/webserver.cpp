@@ -56,6 +56,8 @@ namespace webServer
 
         // WiFiManager, Local intialization. Once its business is done, there is no need to keep it around
         WiFiManager wm;
+        
+        // wm.setConnectTimeout(15); 
         wm.setWiFiAutoReconnect(true);
 
         //sets timeout until configuration portal gets turned off useful to make it all retry or go to sleep
@@ -164,6 +166,7 @@ namespace webServer
             response->printf("/show\n");
             response->printf("/bms.data\n");
             response->printf("/balance.toggle\n");
+            response->printf("/restart\n");
 
             response->printf("/power/watt  watt may be a positive number\n");
             response->printf("/reboot\n");
@@ -200,7 +203,7 @@ namespace webServer
             request->send(response);
         });
 
-        Server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request){
+        Server.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request){
             bms.reboot();
         });
 
@@ -226,8 +229,8 @@ namespace webServer
             response->printf("SOC: %d %%\n", bms.values.percentage);
             response->printf("totalCapacity: %5.3f Ah\n", bms.values.totalCapacity);
             response->printf("remainingCapacity: %5.3f Ah\n", bms.values.remainingCapacity);
-            response->printf("chargeFlag: %x\n", bms.values.chargeFlag);
-            response->printf("dischargeFlag: %x\n\n", bms.values.dischargeFlag);
+            response->printf("chargeFlag: 0x%x\n", bms.values.chargeFlag);
+            response->printf("dischargeFlag: 0x%x\n\n", bms.values.dischargeFlag);
 
             response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.highestNumber, bms.values.highestVoltage);
             response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.lowestNumber, bms.values.lowestVoltage);
@@ -281,6 +284,12 @@ namespace webServer
                 String requestedPower = request->getParam("power")->value();
                 request->send(200, "text/plain", "Requested Power: " + requestedPower + " W");
                 soyosource::requestPower(requestedPower.toInt());
+            }
+            else if (request->hasParam("bms_discharge")) 
+            {
+                String bms_discharge = request->getParam("bms_discharge")->value();
+                request->send(200, "text/plain", "bms set to: " + bms_discharge);
+                bms.setDischargeMos(bms_discharge.toInt());
             }
             else if (request->hasParam("btmac")) 
             {
@@ -414,58 +423,63 @@ namespace webServer
 
         bms.requestAndProcess();
 
-        char num_of_cells[50];
-        snprintf(num_of_cells, sizeof(num_of_cells), "<tr><td>%d</td></tr>", bms.values.numberOfBatteries);
+        char num_of_cells[20];
+        snprintf(num_of_cells, sizeof(num_of_cells), "%d", bms.values.numberOfBatteries);
 
         char cell_val[32][50];
         for (int i = 0; i<32; ++i)
         {
-            if (i < bms.values.numberOfBatteries)
-                snprintf(cell_val[i], 50, "<tr><td>[%d] %5.3f V</td></tr>", i, bms.values.voltages[i]);
+            if (i < bms.values.numberOfBatteries) 
+                snprintf(cell_val[i], 50, "<td>[%d] %5.3f V</td>", i, bms.values.voltages[i]);
             else
                 snprintf(cell_val[i], 50, " ");
         }
+
+        char client_id[16];
+        snprintf(client_id, sizeof(client_id), "%d.%d.%d.%d", local_ip[0], local_ip[1], local_ip[2], local_ip[3]);
 
         struct 
         {
             const char* pattern;
             char* replacement;
         } pr[] = {
+            {"%CLIENTIPADRESSxx%", client_id},
+            {"%VERSION  Dec 13 2023 00:00:00%", VERSION " " __DATE__ " " __TIME__},
             {"%STATICPOWER%", powerChars},
             {"%UPTIME%", naChars},
-            {"%<tr><td>NUMBER_OF_CELLS</td></tr>%", num_of_cells},
-            {"%<tr><td>[xx] CELL0 V</td></tr>%", cell_val[0]},
-            {"%<tr><td>[xx] CELL1 V</td></tr>%", cell_val[1]},
-            {"%<tr><td>[xx] CELL2 V</td></tr>%", cell_val[2]},
-            {"%<tr><td>[xx] CELL3 V</td></tr>%", cell_val[3]},
-            {"%<tr><td>[xx] CELL4 V</td></tr>%", cell_val[4]},
-            {"%<tr><td>[xx] CELL5 V</td></tr>%", cell_val[5]},
-            {"%<tr><td>[xx] CELL6 V</td></tr>%", cell_val[6]},
-            {"%<tr><td>[xx] CELL7 V</td></tr>%", cell_val[7]},
-            {"%<tr><td>[xx] CELL8 V</td></tr>%", cell_val[8]},
-            {"%<tr><td>[xx] CELL9 V</td></tr>%", cell_val[9]},
-            {"%<tr><td>[xx] CELL10 V</td></tr>%", cell_val[10]},
-            {"%<tr><td>[xx] CELL11 V</td></tr>%", cell_val[11]},
-            {"%<tr><td>[xx] CELL12 V</td></tr>%", cell_val[12]},
-            {"%<tr><td>[xx] CELL13 V</td></tr>%", cell_val[13]},
-            {"%<tr><td>[xx] CELL14 V</td></tr>%", cell_val[14]},
-            {"%<tr><td>[xx] CELL15 V</td></tr>%", cell_val[15]},
-            {"%<tr><td>[xx] CELL16 V</td></tr>%", cell_val[16]},
-            {"%<tr><td>[xx] CELL17 V</td></tr>%", cell_val[17]},
-            {"%<tr><td>[xx] CELL18 V</td></tr>%", cell_val[18]},
-            {"%<tr><td>[xx] CELL19 V</td></tr>%", cell_val[19]},
-            {"%<tr><td>[xx] CELL20 V</td></tr>%", cell_val[20]},
-            {"%<tr><td>[xx] CELL21 V</td></tr>%", cell_val[21]},
-            {"%<tr><td>[xx] CELL22 V</td></tr>%", cell_val[22]},
-            {"%<tr><td>[xx] CELL23 V</td></tr>%", cell_val[23]},
-            {"%<tr><td>[xx] CELL24 V</td></tr>%", cell_val[24]},
-            {"%<tr><td>[xx] CELL25 V</td></tr>%", cell_val[25]},
-            {"%<tr><td>[xx] CELL26 V</td></tr>%", cell_val[26]},
-            {"%<tr><td>[xx] CELL27 V</td></tr>%", cell_val[27]},
-            {"%<tr><td>[xx] CELL28 V</td></tr>%", cell_val[28]},
-            {"%<tr><td>[xx] CELL29 V</td></tr>%", cell_val[29]},
-            {"%<tr><td>[xx] CELL30 V</td></tr>%", cell_val[30]},
-            {"%<tr><td>[xx] CELL31 V</td></tr>%", cell_val[31]},
+            {"%NUMBER_OF_CELLS%", num_of_cells},
+            {"%<td>[xx] CELL0 V</td>%", cell_val[0]},
+            {"%<td>[xx] CELL1 V</td>%", cell_val[1]},
+            {"%<td>[xx] CELL2 V</td>%", cell_val[2]},
+            {"%<td>[xx] CELL3 V</td>%", cell_val[3]},
+            {"%<td>[xx] CELL4 V</td>%", cell_val[4]},
+            {"%<td>[xx] CELL5 V</td>%", cell_val[5]},
+            {"%<td>[xx] CELL6 V</td>%", cell_val[6]},
+            {"%<td>[xx] CELL7 V</td>%", cell_val[7]},
+            {"%<td>[xx] CELL8 V</td>%", cell_val[8]},
+            {"%<td>[xx] CELL9 V</td>%", cell_val[9]},
+            {"%<td>[xx] CELL10 V</td>%", cell_val[10]},
+            {"%<td>[xx] CELL11 V</td>%", cell_val[11]},
+            {"%<td>[xx] CELL12 V</td>%", cell_val[12]},
+            {"%<td>[xx] CELL13 V</td>%", cell_val[13]},
+            {"%<td>[xx] CELL14 V</td>%", cell_val[14]},
+            {"%<td>[xx] CELL15 V</td>%", cell_val[15]},
+            {"%<td>[xx] CELL16 V</td>%", cell_val[16]},
+            {"%<td>[xx] CELL17 V</td>%", cell_val[17]},
+            {"%<td>[xx] CELL18 V</td>%", cell_val[18]},
+            {"%<td>[xx] CELL19 V</td>%", cell_val[19]},
+            {"%<td>[xx] CELL20 V</td>%", cell_val[20]},
+            {"%<td>[xx] CELL21 V</td>%", cell_val[21]},
+            {"%<td>[xx] CELL22 V</td>%", cell_val[22]},
+            {"%<td>[xx] CELL23 V</td>%", cell_val[23]},
+            {"%<td>[xx] CELL24 V</td>%", cell_val[24]},
+            {"%<td>[xx] CELL25 V</td>%", cell_val[25]},
+            {"%<td>[xx] CELL26 V</td>%", cell_val[26]},
+            {"%<td>[xx] CELL27 V</td>%", cell_val[27]},
+            {"%<td>[xx] CELL28 V</td>%", cell_val[28]},
+            {"%<td>[xx] CELL29 V</td>%", cell_val[29]},
+            {"%<td>[xx] CELL30 V</td>%", cell_val[30]},
+            {"%<td>[xx] CELL31 V</td>%", cell_val[31]},
             {0, 0},
         };
 
@@ -491,7 +505,7 @@ namespace webServer
     bool checkGateway()
     {
         Serial.println(webServer::gateway);
-        bool success = Ping.ping(webServer::gateway, 4);
+        bool success = Ping.ping(webServer::gateway, 2);
         if (success)
             Serial.println("Network OK");
         else

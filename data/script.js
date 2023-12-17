@@ -93,11 +93,11 @@ function set_power(value) {
   xhr.send();
 };
 
-function apmode() {
-  let text = "Reset WiFi credentials and restart!\nPress OK or Cancel.";
+function balance_toggle() {
+  let text = "Toggle BMS Autobalance?";
   if (confirm(text) == true) {
     var xhr = new XMLHttpRequest();
-    xhr.open("GET", "/apmode", true);
+    xhr.open("GET", "/balance.toggle", true);
     xhr.send();
   } else {
     text = " canceled!";
@@ -105,7 +105,7 @@ function apmode() {
 };
 
 function restart() {
-  let text = "Restart System!\nPress OK or Cancel.";
+  let text = "Restart System?";
   if (confirm(text) == true) {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", "/restart", true);

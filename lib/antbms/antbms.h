@@ -71,6 +71,7 @@ class AntBMS
 		tristate setAutoBalance(bool on);
 
 		void reboot();
+		bool setDischargeMos(uint8_t state);
 
 		void printSerial();
 };
