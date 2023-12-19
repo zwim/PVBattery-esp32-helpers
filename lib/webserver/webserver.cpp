@@ -230,11 +230,16 @@ namespace webServer
             response->printf("totalCapacity: %5.3f Ah\n", bms.values.totalCapacity);
             response->printf("remainingCapacity: %5.3f Ah\n", bms.values.remainingCapacity);
             response->printf("chargeFlag: 0x%x\n", bms.values.chargeFlag);
-            response->printf("dischargeFlag: 0x%x\n\n", bms.values.dischargeFlag);
+            if (bms.values.dischargeFlag == 0x01)
+                response->printf("dischargeFlag: open\n\n");
+            else if (bms.values.dischargeFlag == 0x0f)
+                response->printf("dischargeFlag: manually close\n\n");
+            else
+                response->printf("dischargeFlag: 0x%x\n\n", bms.values.dischargeFlag);
 
-            response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.highestNumber, bms.values.highestVoltage);
-            response->printf("lowest Cell [% 2d]: %5.3f\n", bms.values.lowestNumber, bms.values.lowestVoltage);
-            response->printf("Cell diff %5.3f\n", bms.values.highestVoltage - bms.values.lowestVoltage);
+            response->printf("highest Cell [% 2d]: %5.3f V\n", bms.values.highestNumber, bms.values.highestVoltage);
+            response->printf("lowest Cell  [% 2d]: %5.3f V\n", bms.values.lowestNumber, bms.values.lowestVoltage);
+            response->printf("Cell diff          %5.3f V\n", bms.values.highestVoltage - bms.values.lowestVoltage);
             for (int probe = 0; probe < 6; probe++) {
                 if (bms.values.temperatures[probe] < 200 && bms.values.temperatures[probe] > -20)
                     response->printf("Probe %d: %d C\n", probe, bms.values.temperatures[probe]);
