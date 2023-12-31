@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+#define VERSION "1.0.1"
+
 namespace config
 {
     extern bool shouldSaveConfig;

@@ -34,7 +34,7 @@ struct BMSStruct
 		dischargeFlag,
 		numberOfBatteries,
 		balancedStatusFlag,
-		realySwitch,
+		relaySwitch,
 		highestNumber,
 		lowestNumber,
 		numberOfMonomerStrings;
@@ -71,6 +71,7 @@ class AntBMS
 		tristate setAutoBalance(bool on);
 
 		void reboot();
+		bool setDischargeMos(uint8_t state);
 
 		void printSerial();
 };

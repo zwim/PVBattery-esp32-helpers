@@ -19,9 +19,9 @@ namespace config
     bool shouldSaveConfig = false;
 
     char hostname[40] = "ANT_CONNECTOR";
-    char bt_enabled[20] = "0";
+    char bt_enabled[20] = "1";
     char bt_mac_address[40] = "AA:BB:CC:DD:EE:00";
-    char rs485_enabled[20] = "0";
+    char rs485_enabled[20] = "1";
 
     // save configuration, max inverter power ...
     void saveConfigFile(bool force)

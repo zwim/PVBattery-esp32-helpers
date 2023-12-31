@@ -36,7 +36,7 @@ bool AntBMS::processPacket()
 	values.chargeFlag = (uint8_t) buffer[103];
 	values.dischargeFlag = (uint8_t) buffer[104];
 	values.balancedStatusFlag = (uint8_t) buffer[105];
-	values.realySwitch = buffer[110];
+	values.relaySwitch = buffer[110];
 	values.currentPower = buffer_get_int32(buffer, 111);
 	values.highestNumber = (uint8_t) buffer[115];
 	values.highestVoltage = (double) buffer_get_int16(buffer, 116) * 1e-3;
@@ -78,8 +78,8 @@ void AntBMS::printSerial()
 	Serial.print("totalCapacity:"); Serial.println(values.totalCapacity);
 	Serial.print("remainingCapacity:"); Serial.println(values.remainingCapacity);
 	Serial.print("totalCapacity:"); Serial.println(values.totalCapacity);
-	Serial.print("chargeFlag:"); Serial.println(values.chargeFlag);
-	Serial.print("dischargeFlag:"); Serial.println(values.dischargeFlag);
+	Serial.print("chargeFlag: 0x"); Serial.println(values.chargeFlag);
+	Serial.print("dischargeFlag: 0x"); Serial.println(values.dischargeFlag);
 
 	for (int probe = 0; probe < 6; ++probe) 
 		Serial.printf("Probe %d: %d", probe, values.temperatures[probe]);
@@ -208,9 +208,33 @@ void AntBMS::reboot()
   	bluetooth::readBlockBT(data, sizeof(data));
 }
 
- // reading ANT-BMS data and process them
- bool AntBMS::requestAndProcess()
- {
+bool AntBMS::setDischargeMos(uint8_t state)
+{
+    if (!bms.requestAndProcess())
+		return false;
+
+	if (state == 0 && values.dischargeFlag == 0xf)
+		return true; // already off
+	else if (state == 1 && values.dischargeFlag == 0x1)
+		return true; // already on
+	
+	// toggle discharge MOSFET
+	uint8_t data[] = {0xA5, 0xA5, 249, 0, state, (uint8_t) (249 + state)};
+
+	while (bluetooth::SerialBT.available())
+		bluetooth::SerialBT.read();
+	bluetooth::writeBlockBT(data, sizeof(data));
+	while (!bluetooth::SerialBT.available())
+		empty_statement;
+
+  	bluetooth::readBlockBT(data, sizeof(data));
+
+	return true;
+}
+
+// reading ANT-BMS data and process them
+bool AntBMS::requestAndProcess()
+{
 	if (dataAge() < 1000)
 		return true;
     int bytesRead = bms.requestData();
