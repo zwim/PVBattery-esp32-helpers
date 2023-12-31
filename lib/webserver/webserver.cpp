@@ -161,12 +161,11 @@ namespace webServer
 
             response->printf("\nBuild: %s %s\n\n", __DATE__, __TIME__);
 
-            response->printf("/balance.off\n");
-
             response->printf("/show\n");
             response->printf("/bms.data\n");
             response->printf("/balance.toggle\n");
             response->printf("/restart\n");
+            response->printf("set?power=int, set?bms_discharge=0|1, set?btmac=xxxx, set?bluetooth=0|1, set?rs485=0|1");
 
             response->printf("/power/watt  watt may be a positive number\n");
             response->printf("/reboot\n");
@@ -196,10 +195,13 @@ namespace webServer
 
         Server.on("/balance.toggle", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
-            if (bms.toggleAutoBalance())
+            tristate retval = bms.toggleAutoBalance();
+            if (retval == 1)
                 response->printf("auto balance toggled on");
-            else
+            else if (retval == -1)
                 response->printf("auto balance toggled off");
+            else
+                response->printf("auto balance toggle failed");
             request->send(response);
         });
 
@@ -224,6 +226,7 @@ namespace webServer
         Server.on("/show", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 1024); // todo use BUFFER_SIZE
             bms.requestAndProcess();
+            response->printf(VERSION " " __DATE__ " " __TIME__ "\n");
             response->printf("Power: %ld W\n", bms.values.currentPower);
             response->printf("Current: %3.2f A\n", bms.values.current);
             response->printf("SOC: %d %%\n", bms.values.percentage);
@@ -237,9 +240,15 @@ namespace webServer
             else
                 response->printf("dischargeFlag: 0x%x\n\n", bms.values.dischargeFlag);
 
-            response->printf("highest Cell [% 2d]: %5.3f V\n", bms.values.highestNumber, bms.values.highestVoltage);
-            response->printf("lowest Cell  [% 2d]: %5.3f V\n", bms.values.lowestNumber, bms.values.lowestVoltage);
+            response->printf("highest Cell [%2d]: %5.3f V\n", bms.values.highestNumber, bms.values.highestVoltage);
+            response->printf("lowest Cell  [%2d]: %5.3f V\n", bms.values.lowestNumber, bms.values.lowestVoltage);
             response->printf("Cell diff          %5.3f V\n", bms.values.highestVoltage - bms.values.lowestVoltage);
+            response->printf("Balancers: (0x%X)\n", (unsigned int) bms.values.balancingFlags);
+
+            for (int cell = 0; cell < bms.values.numberOfBatteries; cell++) {
+                response->printf("Cell %2d%c %1.3f V \n", cell+1, bms.values.balancingFlags & (1<<cell) ? 'x' : ':', bms.values.voltages[cell]);
+            }
+
             for (int probe = 0; probe < 6; probe++) {
                 if (bms.values.temperatures[probe] < 200 && bms.values.temperatures[probe] > -20)
                     response->printf("Probe %d: %d C\n", probe, bms.values.temperatures[probe]);
@@ -247,9 +256,6 @@ namespace webServer
                     response->printf("Probe %d: not connected\n", probe);
             }
 
-            for (int cell = 0; cell < bms.values.numberOfBatteries; cell++) {
-                response->printf("Cell %d: %1.3f V\n", cell, bms.values.voltages[cell]);
-            }
             request->send(response);
         });
 
@@ -283,6 +289,11 @@ namespace webServer
 
 
         // Send a GET request to <IP>/set?power=<value>
+        // set?power=int
+        // set?bms_discharge=0|1
+        // set?btmac=xxxx
+        // set?bluetooth=0|1
+        // set?rs485=0|1
         Server.on("/set", HTTP_GET, [] (AsyncWebServerRequest *request) {
             if (request->hasParam("power")) 
             {
@@ -297,7 +308,7 @@ namespace webServer
                 bms.setDischargeMos(bms_discharge.toInt());
             }
             else if (request->hasParam("btmac")) 
-            {
+            {   // not tested yet
                 String macadr = request->getParam("btmac")->value();
                 request->send(200, "text/plain", "Bluetooth MAC: " + macadr);
                 strcpy(config::bt_mac_address, macadr.c_str());

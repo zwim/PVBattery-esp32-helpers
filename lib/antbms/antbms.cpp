@@ -36,7 +36,7 @@ bool AntBMS::processPacket()
 	values.chargeFlag = (uint8_t) buffer[103];
 	values.dischargeFlag = (uint8_t) buffer[104];
 	values.balancedStatusFlag = (uint8_t) buffer[105];
-	values.realySwitch = buffer[110];
+	values.relaySwitch = buffer[110];
 	values.currentPower = buffer_get_int32(buffer, 111);
 	values.highestNumber = (uint8_t) buffer[115];
 	values.highestVoltage = (double) buffer_get_int16(buffer, 116) * 1e-3;

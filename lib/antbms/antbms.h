@@ -34,7 +34,7 @@ struct BMSStruct
 		dischargeFlag,
 		numberOfBatteries,
 		balancedStatusFlag,
-		realySwitch,
+		relaySwitch,
 		highestNumber,
 		lowestNumber,
 		numberOfMonomerStrings;

@@ -7,6 +7,8 @@
 
 #include "Arduino.h"
 #include <WiFiManager.h> 
+#include <esp_task_wdt.h>
+
 
 #include "antbms.h"
 #include "bluetooth.h"
@@ -14,6 +16,8 @@
 #include "soyosource.h"
 #include "timeclient.h"
 #include "webserver.h"
+
+#define WDT_TIMEOUT_MS 15000
 
 void setup() 
 {
@@ -56,12 +60,15 @@ void setup()
     }
 
     Serial.println(" " __DATE__ __TIME__);
+
+    esp_task_wdt_add(NULL);
 } // end setup()
 
 
 unsigned long _start_time = 0;
 void loop() 
 {
+    esp_task_wdt_reset();
     delay(100);    
 
     // check every 10s if Network is reachable
