@@ -53,7 +53,14 @@ class AntBMS
 		unsigned long lastDataMillis = 0;
 		int requestData();
 		bool processPacket();
-		bool isChecksumValid();
+		bool isLiveDataChecksumValid();
+		bool isFrameChecksumValid(const uint8_t buffer[]);
+
+		void clearDataAge() { lastDataMillis = 0; }
+		void wait(uint32_t ms) { 
+			while (lastDataMillis + ms < millis())
+				;	
+		}
 
 		unsigned long dataAge() {
 			unsigned long age = millis() - lastDataMillis;
