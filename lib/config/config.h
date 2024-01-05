@@ -3,7 +3,15 @@
 
 #include <Arduino.h>
 
-#define VERSION "1.0.1"
+#define VERSION "1.0.2"
+
+/*
+Changelog:
+1.0.2: make bluetooth-bms more robust (flush, timeout)
+
+
+
+*/
 
 namespace config
 {

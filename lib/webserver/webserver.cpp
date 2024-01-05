@@ -163,6 +163,8 @@ namespace webServer
 
             response->printf("/show\n");
             response->printf("/bms.data\n");
+            response->printf("/balance.on\n");
+            response->printf("/balance.off\n");
             response->printf("/balance.toggle\n");
             response->printf("/restart\n");
             response->printf("set?power=int, set?bms_discharge=0|1, set?btmac=xxxx, set?bluetooth=0|1, set?rs485=0|1");
@@ -173,35 +175,55 @@ namespace webServer
             request->send(response);
         });
 
-/*
+        Server.on("/balance.toggle", HTTP_GET, [](AsyncWebServerRequest *request){
+            AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
+            tristate retval = bms.toggleAutoBalance();
+            response->printf("auto balance ");
+            if (retval == 1)
+                response->printf("on");
+            else if (retval == -1)
+                response->printf("off");
+            else
+                response->printf("failed");
+            request->send(response);
+        });
+
         Server.on("/balance.on", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
-            if (bms.setAutoBalance(true))
+            tristate retval = bms.setAutoBalance(true);
+            response->printf("auto balance ");
+            if (retval == 1)
                 response->printf("on");
-            else
+            else if (retval == -1)
                 response->printf("off");
+            else
+                response->printf("failed");
             request->send(response);
         });
 
         Server.on("/balance.off", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
-            if (bms.setAutoBalance(false))
+            tristate retval = bms.setAutoBalance(false);
+            response->printf("auto balance ");
+            if (retval == 1)
+                response->printf("on");
+            else if (retval == -1)
                 response->printf("off");
             else
-                response->printf("on");
+                response->printf("failed");
             request->send(response);
         });
-*/
 
-        Server.on("/balance.toggle", HTTP_GET, [](AsyncWebServerRequest *request){
+        Server.on("/balance.get", HTTP_GET, [](AsyncWebServerRequest *request){
             AsyncResponseStream *response = request->beginResponseStream("text/plain", 150);
-            tristate retval = bms.toggleAutoBalance();
+            tristate retval = bms.readAutoBalance();
+            response->printf("auto balance ");
             if (retval == 1)
-                response->printf("auto balance toggled on");
+                response->printf("on");
             else if (retval == -1)
-                response->printf("auto balance toggled off");
+                response->printf("off");
             else
-                response->printf("auto balance toggle failed");
+                response->printf("failed");
             request->send(response);
         });
 
@@ -228,7 +250,7 @@ namespace webServer
             bms.requestAndProcess();
             response->printf(VERSION " " __DATE__ " " __TIME__ "\n");
             response->printf("Power: %ld W\n", bms.values.currentPower);
-            response->printf("Current: %3.2f A\n", bms.values.current);
+            response->printf("Current: %3.1f A\n", bms.values.current);
             response->printf("SOC: %d %%\n", bms.values.percentage);
             response->printf("totalCapacity: %5.3f Ah\n", bms.values.totalCapacity);
             response->printf("remainingCapacity: %5.3f Ah\n", bms.values.remainingCapacity);
@@ -318,14 +340,14 @@ namespace webServer
             }
             else if (request->hasParam("bluetooth"))
             {
-                String requestedPower = request->getParam("bluetooth")->value();
-                if (requestedPower[0] == '1')
+                String bt_on = request->getParam("bluetooth")->value();
+                if (bt_on[0] == '1')
                 {
                     request->send(200, "text/plain", "enable Bluetooth");
                     strcpy(config::bt_enabled, "1");
                     bluetooth::enabled = true;
                 }
-                else if (requestedPower[0] == '0')
+                else if (bt_on[0] == '0')
                 {
                     request->send(200, "text/plain", "disable Bluetooth");
                     strcpy(config::bt_enabled, "0");
@@ -340,14 +362,14 @@ namespace webServer
             } 
             else if (request->hasParam("rs485"))
             {
-                String requestedPower = request->getParam("rs485")->value();
-                if (requestedPower[0] == '1')
+                String rs485_on = request->getParam("rs485")->value();
+                if (rs485_on[0] == '1')
                 {
                     request->send(200, "text/plain", "enable rs485");
                     strcpy(config::rs485_enabled, "1");
                     soyosource::enabled = true;
                 }
-                else if (requestedPower[0] == '0')
+                else if (rs485_on[0] == '0')
                 {
                     request->send(200, "text/plain", "disable rs485");
                     strcpy(config::rs485_enabled, "0");
